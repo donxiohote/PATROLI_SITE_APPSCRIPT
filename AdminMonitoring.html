@@ -1,0 +1,230 @@
+<div class="container py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="mb-1">Admin Monitoring (LIVE)</h4>
+      <div class="text-muted" id="info" style="font-size:13px;"></div>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="<?= baseUrl ?>?page=dashboard">Kembali</a>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label">Tanggal</label>
+          <input id="tgl" type="date" class="form-control" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Filter Lokasi Site</label>
+          <input id="site" class="form-control" placeholder="kosong = semua" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Filter Kategori</label>
+          <input id="kat" class="form-control" placeholder="Security / CS / Driver" />
+        </div>
+        <div class="col-md-3 d-grid">
+          <button class="btn btn-primary" onclick="load()">Refresh</button>
+        </div>
+      </div>
+
+      <div class="row g-2 mt-3">
+        <div class="col-lg-2 col-md-4"><div class="alert alert-secondary mb-0">Personil: <b id="t_personil">0</b></div></div>
+        <div class="col-lg-2 col-md-4"><div class="alert alert-success mb-0">Hadir: <b id="t_hadir">0</b></div></div>
+        <div class="col-lg-3 col-md-4"><div class="alert alert-warning mb-0">Belum Masuk: <b id="t_belum_masuk">0</b></div></div>
+        <div class="col-lg-3 col-md-4"><div class="alert alert-info mb-0">Belum Scan: <b id="t_belum_scan">0</b></div></div>
+        <div class="col-lg-2 col-md-4"><div class="alert alert-danger mb-0">Belum Pulang: <b id="t_belum_pulang">0</b></div></div>
+      </div>
+
+      <div class="text-muted mt-2" style="font-size:13px;">Total Scan hari ini: <b id="t_scan">0</b></div>
+    </div>
+  </div>
+
+  <div id="msg" class="alert" style="display:none;"></div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-body">
+          <h6>Belum Absen Masuk</h6>
+          <div class="table-responsive">
+            <table class="table table-sm table-striped">
+              <thead><tr><th>ID</th><th>Nama</th><th>Kategori</th><th>Site</th></tr></thead>
+              <tbody id="tbBelumMasuk"><tr><td colspan="4" class="text-muted"><i>Loading...</i></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-body">
+          <h6>Sudah Masuk, Belum Pulang</h6>
+          <div class="table-responsive">
+            <table class="table table-sm table-striped">
+              <thead><tr><th>ID</th><th>Nama</th><th>Masuk</th><th>Site</th></tr></thead>
+              <tbody id="tbBelumPulang"><tr><td colspan="4" class="text-muted"><i>Loading...</i></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BELUM SCAN (HANYA YANG SUDAH MASUK) -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <h6>Belum Scan Sama Sekali (Sudah Masuk)</h6>
+          <div class="table-responsive">
+            <table class="table table-sm table-striped">
+              <thead><tr><th>ID</th><th>Nama</th><th>Masuk</th><th>Kategori</th><th>Site</th></tr></thead>
+              <tbody id="tbBelumScan"><tr><td colspan="5" class="text-muted"><i>Loading...</i></td></tr></tbody>
+            </table>
+          </div>
+          <div class="text-muted" style="font-size:12px;">Hanya personil yang sudah absen masuk tapi belum melakukan scan checkpoint hari ini.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <h6>Scan Patroli (Summary)</h6>
+          <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+              <thead>
+                <tr>
+                  <th>ID</th><th>Nama</th><th>Kategori</th><th>Site</th>
+                  <th class="text-end">Total Scan</th><th>Last</th><th>Checkpoint</th><th>Area</th>
+                </tr>
+              </thead>
+              <tbody id="tbScan"><tr><td colspan="8" class="text-muted"><i>Loading...</i></td></tr></tbody>
+            </table>
+          </div>
+          <div class="text-muted" style="font-size:12px;">Urut berdasarkan total scan tertinggi.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let TOKEN = null;
+
+  function showMsg(type, text){
+    const el = document.getElementById('msg');
+    el.className = 'alert alert-' + (type || 'info');
+    el.style.display = text ? 'block' : 'none';
+    el.textContent = text || '';
+  }
+  function esc(s){
+    return String(s||'').replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+  }
+
+  function setTotals(t){
+    document.getElementById('t_personil').textContent = t.personil_aktif || 0;
+    document.getElementById('t_hadir').textContent = t.hadir || 0;
+    document.getElementById('t_belum_masuk').textContent = t.belum_masuk || 0;
+    document.getElementById('t_belum_scan').textContent = t.belum_scan || 0;
+    document.getElementById('t_belum_pulang').textContent = t.belum_pulang || 0;
+    document.getElementById('t_scan').textContent = t.total_scan || 0;
+  }
+
+  function load(){
+    showMsg('', '');
+
+    // tampilkan loading placeholders setiap refresh
+    document.getElementById('tbBelumMasuk').innerHTML = `<tr><td colspan="4" class="text-muted"><i>Loading...</i></td></tr>`;
+    document.getElementById('tbBelumPulang').innerHTML = `<tr><td colspan="4" class="text-muted"><i>Loading...</i></td></tr>`;
+    document.getElementById('tbBelumScan').innerHTML  = `<tr><td colspan="5" class="text-muted"><i>Loading...</i></td></tr>`;
+    document.getElementById('tbScan').innerHTML       = `<tr><td colspan="8" class="text-muted"><i>Loading...</i></td></tr>`;
+
+    const tanggal = document.getElementById('tgl').value;
+    const lokasi_site = document.getElementById('site').value.trim();
+    const kategori = document.getElementById('kat').value.trim();
+
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          showMsg('warning', (res && res.message) ? res.message : 'Gagal memuat monitoring.');
+          return;
+        }
+
+        setTotals(res.totals || {});
+        document.getElementById('info').textContent =
+          `Tanggal: ${res.tanggal} • Filter site="${res.filter.lokasi_site||''}" • kategori="${res.filter.kategori||''}"`;
+
+        // belum masuk
+        const a = (res.data && res.data.belumMasuk) ? res.data.belumMasuk : [];
+        document.getElementById('tbBelumMasuk').innerHTML = a.length
+          ? a.map(r=>`<tr><td>${esc(r.id_personil)}</td><td>${esc(r.nama)}</td><td>${esc(r.kategori)}</td><td>${esc(r.lokasi_site)}</td></tr>`).join('')
+          : `<tr><td colspan="4" class="text-muted"><i>Semua sudah absen masuk.</i></td></tr>`;
+
+        // belum pulang
+        const b = (res.data && res.data.belumPulang) ? res.data.belumPulang : [];
+        document.getElementById('tbBelumPulang').innerHTML = b.length
+          ? b.map(r=>`<tr><td>${esc(r.id_personil)}</td><td>${esc(r.nama)}</td><td>${esc(r.jam_masuk)}</td><td>${esc(r.lokasi_site)}</td></tr>`).join('')
+          : `<tr><td colspan="4" class="text-muted"><i>Tidak ada yang tertahan.</i></td></tr>`;
+
+        // belum scan (sudah masuk tapi belum scan)
+        const c = (res.data && res.data.belumScan) ? res.data.belumScan : [];
+        document.getElementById('tbBelumScan').innerHTML = c.length
+          ? c.map(r=>`<tr>
+              <td>${esc(r.id_personil)}</td>
+              <td>${esc(r.nama)}</td>
+              <td>${esc(r.jam_masuk || '')}</td>
+              <td>${esc(r.kategori)}</td>
+              <td>${esc(r.lokasi_site)}</td>
+            </tr>`).join('')
+          : `<tr><td colspan="5" class="text-muted"><i>Tidak ada. Semua yang sudah masuk sudah melakukan scan.</i></td></tr>`;
+
+        // scan summary
+        const s = (res.data && res.data.scanSummary) ? res.data.scanSummary : [];
+        document.getElementById('tbScan').innerHTML = s.length
+          ? s.map(r=>`
+            <tr>
+              <td>${esc(r.id_personil)}</td>
+              <td>${esc(r.nama)}</td>
+              <td>${esc(r.kategori)}</td>
+              <td>${esc(r.lokasi_site)}</td>
+              <td class="text-end"><b>${esc(r.scan_count)}</b></td>
+              <td>${esc(r.last_jam)}</td>
+              <td>${esc(r.last_checkpoint)}</td>
+              <td>${esc(r.last_area)}</td>
+            </tr>`).join('')
+          : `<tr><td colspan="8" class="text-muted"><i>Belum ada scan.</i></td></tr>`;
+      })
+      .withFailureHandler(function(err){
+        showMsg('warning', err && err.message ? err.message : 'Terjadi error.');
+      })
+      .adminGetTodayMonitoring(TOKEN, tanggal, { lokasi_site, kategori });
+  }
+
+  (function init(){
+    try { TOKEN = localStorage.getItem('PT_TOKEN'); } catch(e) {}
+    if (!TOKEN) return window.location.href = '<?= baseUrl ?>?page=login';
+
+    // default tanggal = hari ini
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    document.getElementById('tgl').value = `${y}-${m}-${dd}`;
+
+    google.script.run.withSuccessHandler(function(res){
+      if (!res || !res.ok) {
+        try { localStorage.removeItem('PT_TOKEN'); localStorage.removeItem('PT_USER'); } catch(e){}
+        window.location.href = '<?= baseUrl ?>?page=login';
+        return;
+      }
+      // admin-only page: kalau bukan admin/komandan, paksa balik dashboard
+      const u = res.user || {};
+      const role = String(u.role || '').toLowerCase();
+      if (role !== 'admin' && role !== 'komandan') {
+        window.location.href = '<?= baseUrl ?>?page=dashboard';
+        return;
+      }
+      load();
+    }).verifyToken(TOKEN);
+  })();
+</script>
