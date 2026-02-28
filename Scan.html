@@ -1,0 +1,321 @@
+<div class="container py-3" style="max-width:720px;">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="mb-1">Scan Patroli</h4>
+      <div class="text-muted" id="info" style="font-size:13px;"></div>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="<?= baseUrl ?>?page=dashboard">Kembali</a>
+  </div>
+
+  <div id="msg" class="alert" style="display:none;"></div>
+
+  <!-- Kamera QR -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="mb-2 text-muted" style="font-size:13px;">
+        Scan QR dari kamera atau buka URL QR:
+        <code><?= baseUrl ?>?page=scan&cp=CP001</code>
+      </div>
+
+      <div class="d-flex gap-2 flex-wrap mb-2">
+        <button class="btn btn-dark btn-sm" onclick="startCam()">🎥 Mulai Kamera</button>
+        <button class="btn btn-outline-dark btn-sm" onclick="stopCam()">Stop</button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="fillFromUrl()">Ambil dari URL</button>
+      </div>
+
+      <div id="qrWrap" class="border rounded p-2" style="display:none;">
+        <div class="text-muted mb-1" style="font-size:12px;">
+          Izinkan kamera. Arahkan QR ke kotak.
+        </div>
+        <div id="qr-reader" style="width:100%;"></div>
+        <video id="video" playsinline style="width:100%; border-radius:10px; display:none;"></video>
+        <canvas id="cv" style="display:none;"></canvas>
+        <div class="text-muted mt-2" style="font-size:12px;">
+          Tips: pakai kamera belakang (back camera).
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Form Scan -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <label class="form-label">ID Checkpoint</label>
+      <input id="cp" class="form-control" placeholder="Contoh: CP001" />
+
+      <label class="form-label mt-3">Device Info (auto)</label>
+      <input id="device" class="form-control" readonly />
+
+      <div class="d-flex gap-2 mt-3">
+        <button id="btnScan" class="btn btn-primary" onclick="doScan()" disabled>Submit Scan</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="fw-bold mb-2">Hasil Terakhir</div>
+      <div id="result" class="text-muted"><i>Belum ada scan.</i></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let TOKEN = null;
+  let stream = null;
+  let running = false;
+  let detector = null;
+  let rafId = null;
+
+  // simpan signature jika QR dari kamera berisi URL
+  let LAST_SIG = '';
+
+  function showMsg(type, text) {
+    const el = document.getElementById('msg');
+    el.className = 'alert alert-' + (type || 'info');
+    el.style.display = text ? 'block' : 'none';
+    el.textContent = text || '';
+  }
+
+  function getParam(name) {
+    const url = new URL(window.location.href);
+    return url.searchParams.get(name);
+  }
+
+  function fillFromUrl() {
+    const v = getParam('cp') || getParam('id_checkpoint');
+    if (v) document.getElementById('cp').value = v;
+  }
+
+  function deviceInfo() {
+    const ua = navigator.userAgent || '';
+    const plat = navigator.platform || '';
+    return (plat + ' | ' + ua).slice(0, 180);
+  }
+
+  // parse QR text:
+  // - kalau URL -> ambil cp dan sig
+  // - kalau hanya "CP001" -> cp saja
+  function parseQrText_(txt){
+    const s = String(txt || '').trim();
+    if (!s) return { cp:'', sig:'' };
+
+    try {
+      if (/^https?:\/\//i.test(s)) {
+        const u = new URL(s);
+        return {
+          cp: u.searchParams.get('cp') || u.searchParams.get('id_checkpoint') || '',
+          sig: u.searchParams.get('sig') || ''
+        };
+      }
+    } catch(e){}
+
+    if (/^CP\d+/i.test(s)) return { cp: s, sig: '' };
+    return { cp:'', sig:'' };
+  }
+
+  async function startCam(){
+    showMsg('', '');
+
+    if (typeof BarcodeDetector === 'undefined') {
+      showMsg('warning',
+        'Browser ini tidak mendukung scan QR via kamera di web app. ' +
+        'Gunakan kamera bawaan HP untuk scan QR (akan membuka link scan).'
+      );
+      return;
+    }
+
+    if (running) return;
+
+    try {
+      detector = new BarcodeDetector({ formats: ['qr_code'] });
+
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+
+      const video = document.getElementById('video');
+      video.srcObject = stream;
+      video.style.display = '';
+      await video.play();
+
+      document.getElementById('qrWrap').style.display = '';
+      running = true;
+      showMsg('info', 'Kamera aktif. Arahkan QR ke kamera.');
+
+      scanLoop_();
+    } catch (e) {
+      running = false;
+      showMsg('warning', 'Gagal akses kamera. Aktifkan izin kamera di browser. ' + (e && e.message ? e.message : e));
+    }
+  }
+
+  function stopCam(){
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+
+    const video = document.getElementById('video');
+    try { video.pause(); } catch(e){}
+    video.style.display = 'none';
+
+    if (stream) {
+      try { stream.getTracks().forEach(t => t.stop()); } catch(e){}
+    }
+    stream = null;
+    detector = null;
+    showMsg('', '');
+  }
+
+  async function scanLoop_(){
+    if (!running) return;
+
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('cv');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    if (!video.videoWidth || !video.videoHeight) {
+      rafId = requestAnimationFrame(scanLoop_);
+      return;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    try {
+      const barcodes = await detector.detect(canvas);
+      if (barcodes && barcodes.length) {
+        const raw = barcodes[0].rawValue || '';
+        const parsed = parseQrText_(raw);
+
+        if (parsed.cp) {
+          document.getElementById('cp').value = parsed.cp;
+          LAST_SIG = parsed.sig || ''; // simpan sig kalau ada
+          showMsg('success', 'QR terbaca: ' + parsed.cp);
+
+          stopCam();
+          await submitScan_(); // auto submit
+          return;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    rafId = requestAnimationFrame(scanLoop_);
+  }
+
+  function getGeo_(timeoutMs){
+    timeoutMs = Number(timeoutMs || 8000);
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve({ ok:false, reason:'Geolocation tidak tersedia' });
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({
+          ok: true,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        }),
+        (err) => resolve({ ok:false, reason: (err && err.message) ? err.message : String(err) }),
+        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 }
+      );
+    });
+  }
+
+  async function submitScan_(){
+    showMsg('info', 'Memproses scan...');
+    const btn = document.getElementById('btnScan');
+    btn.disabled = true;
+
+    const cp = document.getElementById('cp').value.trim();
+    if (!cp) {
+      showMsg('warning', 'ID Checkpoint wajib diisi.');
+      btn.disabled = false;
+      return;
+    }
+
+    // signature: prioritas dari URL (kalau page dibuka dari QR link),
+    // fallback dari LAST_SIG (kalau QR dibaca via kamera dan berisi URL).
+    const sig = getParam('sig') || LAST_SIG || '';
+
+    // GPS
+    const geo = await getGeo_(8000);
+    if (!geo.ok) {
+      showMsg('warning', 'GPS wajib aktif untuk scan. ' + (geo.reason || ''));
+      btn.disabled = false;
+      return;
+    }
+
+    const meta = {
+      source: (getParam('cp') || getParam('id_checkpoint')) ? 'scan_qr' : (LAST_SIG ? 'camera_qr' : 'manual_input'),
+      device_info: document.getElementById('device').value,
+      sig: sig,
+      lat: geo.lat,
+      lng: geo.lng,
+      accuracy: geo.accuracy
+    };
+
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          showMsg('warning', (res && res.message) ? res.message : 'Scan gagal.');
+          btn.disabled = false;
+          return;
+        }
+        showMsg('success', res.message || 'Scan berhasil.');
+        const d = res.data || {};
+        document.getElementById('result').innerHTML =
+          `<div><b>${d.id_checkpoint || ''}</b> - ${d.nama_checkpoint || ''}</div>` +
+          `<div class="text-muted" style="font-size:13px;">Area: ${d.id_area || ''} • Lokasi: ${d.lokasi_aset || ''}</div>` +
+          `<div class="text-muted" style="font-size:13px;">Waktu: ${d.tanggal || ''} ${d.jam || ''}</div>`;
+        btn.disabled = false;
+      })
+      .withFailureHandler(function(err){
+        showMsg('warning', err && err.message ? err.message : 'Terjadi error.');
+        btn.disabled = false;
+      })
+      .scanCheckpoint(TOKEN, cp, meta);
+  }
+
+  function doScan(){
+    // tombol submit manual memanggil wrapper ini
+    submitScan_();
+  }
+
+  (function init(){
+    try { TOKEN = localStorage.getItem('PT_TOKEN'); } catch(e) {}
+    if (!TOKEN) return window.location.href = '<?= baseUrl ?>?page=login';
+
+    document.getElementById('device').value = deviceInfo();
+    fillFromUrl();
+
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          try { localStorage.removeItem('PT_TOKEN'); localStorage.removeItem('PT_USER'); } catch(e){}
+          window.location.href = '<?= baseUrl ?>?page=login';
+          return;
+        }
+
+        const u = res.user || {};
+        document.getElementById('info').textContent =
+          (u.nama || '-') + ' • ' + (u.role || '-') + ' • ' + (u.lokasi_site_default || '-');
+
+        document.getElementById('btnScan').disabled = false;
+
+        // auto submit kalau dibuka dari QR link (ada cp/id_checkpoint)
+        if (getParam('cp') || getParam('id_checkpoint')) {
+          submitScan_();
+        }
+      })
+      .withFailureHandler(function(){
+        window.location.href = '<?= baseUrl ?>?page=login';
+      })
+      .verifyToken(TOKEN);
+  })();
+</script>
+
+
