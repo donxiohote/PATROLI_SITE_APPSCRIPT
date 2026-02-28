@@ -1,0 +1,101 @@
+<div class="container py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="mb-1">Riwayat Scan Saya</h4>
+      <div class="text-muted" id="info" style="font-size:13px;"></div>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="<?= baseUrl ?>?page=dashboard">Kembali</a>
+  </div>
+
+  <div id="msg" class="alert" style="display:none;"></div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div class="text-muted" style="font-size:13px;">Menampilkan scan terbaru</div>
+        <button class="btn btn-sm btn-outline-primary" onclick="load()">Refresh</button>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm table-striped align-middle">
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th>Jam</th>
+              <th>Checkpoint</th>
+              <th>Nama</th>
+              <th>Area</th>
+              <th>ID</th>
+            </tr>
+          </thead>
+          <tbody id="tb">
+            <tr><td colspan="6" class="text-muted"><i>Loading...</i></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let TOKEN = null;
+
+  function showMsg(type, text) {
+    const el = document.getElementById('msg');
+    el.className = 'alert alert-' + (type || 'info');
+    el.style.display = text ? 'block' : 'none';
+    el.textContent = text || '';
+  }
+
+  function load() {
+    showMsg('', '');
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          showMsg('warning', (res && res.message) ? res.message : 'Gagal memuat data.');
+          return;
+        }
+        const rows = res.data || [];
+        const tb = document.getElementById('tb');
+        if (!rows.length) {
+          tb.innerHTML = `<tr><td colspan="6" class="text-muted"><i>Belum ada data scan.</i></td></tr>`;
+          return;
+        }
+        tb.innerHTML = rows.map(r => `
+          <tr>
+            <td>${escapeHtml(r.tanggal || '')}</td>
+            <td>${escapeHtml(r.jam || '')}</td>
+            <td>${escapeHtml(r.id_checkpoint || '')}</td>
+            <td>${escapeHtml(r.nama_checkpoint || '')}</td>
+            <td>${escapeHtml(r.id_area || '')}</td>
+            <td style="font-size:12px;" class="text-muted">${escapeHtml(r.id_scan || '')}</td>
+          </tr>
+        `).join('');
+      })
+      .withFailureHandler(function(err){
+        showMsg('warning', err && err.message ? err.message : 'Terjadi error.');
+      })
+      .getMyScan(TOKEN, 30);
+  }
+
+  function escapeHtml(s){
+    return String(s||'').replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+  }
+
+  (function init(){
+    try { TOKEN = localStorage.getItem('PT_TOKEN'); } catch(e) {}
+    if (!TOKEN) return window.location.href = '<?= baseUrl ?>?page=login';
+
+    google.script.run.withSuccessHandler(function(res){
+      if (!res || !res.ok) {
+        try { localStorage.removeItem('PT_TOKEN'); localStorage.removeItem('PT_USER'); } catch(e){}
+        window.location.href = '<?= baseUrl ?>?page=login';
+        return;
+      }
+      const u = res.user || {};
+      document.getElementById('info').textContent =
+        (u.nama || '-') + ' • ' + (u.role || '-') + ' • ' + (u.lokasi_site_default || '-');
+      load();
+    }).verifyToken(TOKEN);
+  })();
+</script>
