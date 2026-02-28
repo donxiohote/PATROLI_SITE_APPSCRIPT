@@ -1,0 +1,148 @@
+<div class="container py-3" style="max-width:720px;">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="mb-1">Absen Masuk / Pulang</h4>
+      <div class="text-muted" id="info" style="font-size:13px;"></div>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="<?= baseUrl ?>?page=dashboard">Kembali</a>
+  </div>
+
+  <div id="msg" class="alert" style="display:none;"></div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-md-4">
+          <div class="text-muted" style="font-size:12px;">Tanggal</div>
+          <div class="fw-bold" id="tanggal">-</div>
+        </div>
+        <div class="col-md-4">
+          <div class="text-muted" style="font-size:12px;">Jam Masuk</div>
+          <div class="fw-bold" id="jamMasuk">-</div>
+        </div>
+        <div class="col-md-4">
+          <div class="text-muted" style="font-size:12px;">Jam Pulang</div>
+          <div class="fw-bold" id="jamPulang">-</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button id="btnMasuk" class="btn btn-success" onclick="doMasuk()" disabled>Absen Masuk</button>
+    <button id="btnPulang" class="btn btn-danger" onclick="doPulang()" disabled>Absen Pulang</button>
+  </div>
+</div>
+
+<script>
+  let TOKEN = null;
+
+  function showMsg(type, text) {
+    const el = document.getElementById('msg');
+    el.className = 'alert alert-' + (type || 'info');
+    el.style.display = text ? 'block' : 'none';
+    el.textContent = text || '';
+  }
+
+  function setButtons(jamMasuk, jamPulang) {
+    const btnMasuk = document.getElementById('btnMasuk');
+    const btnPulang = document.getElementById('btnPulang');
+
+    // Masuk aktif kalau belum masuk
+    btnMasuk.disabled = !!jamMasuk;
+
+    // Pulang aktif kalau sudah masuk tapi belum pulang
+    btnPulang.disabled = !(!!jamMasuk && !jamPulang);
+  }
+
+  function render(data) {
+    document.getElementById('tanggal').textContent = data.tanggal || '-';
+    document.getElementById('jamMasuk').textContent = data.jam_masuk || '-';
+    document.getElementById('jamPulang').textContent = data.jam_pulang || '-';
+    setButtons(data.jam_masuk, data.jam_pulang);
+  }
+
+  function refresh() {
+    showMsg('', '');
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          showMsg('warning', (res && res.message) ? res.message : 'Gagal memuat status absen.');
+          return;
+        }
+        render(res.data || {});
+      })
+      .withFailureHandler(function(err){
+        showMsg('warning', err && err.message ? err.message : 'Terjadi error.');
+      })
+      .getMyTodayAbsensi(TOKEN);
+  }
+
+  function doMasuk() {
+    showMsg('info', 'Memproses absen masuk...');
+    document.getElementById('btnMasuk').disabled = true;
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          showMsg('warning', (res && res.message) ? res.message : 'Gagal absen masuk.');
+          refresh();
+          return;
+        }
+        showMsg('success', res.message || 'Absen masuk berhasil.');
+        render(res.data || {});
+      })
+      .withFailureHandler(function(err){
+        showMsg('warning', err && err.message ? err.message : 'Terjadi error.');
+        refresh();
+      })
+      .absenMasuk(TOKEN);
+  }
+
+  function doPulang() {
+    showMsg('info', 'Memproses absen pulang...');
+    document.getElementById('btnPulang').disabled = true;
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          showMsg('warning', (res && res.message) ? res.message : 'Gagal absen pulang.');
+          refresh();
+          return;
+        }
+        showMsg('success', res.message || 'Absen pulang berhasil.');
+        render(res.data || {});
+      })
+      .withFailureHandler(function(err){
+        showMsg('warning', err && err.message ? err.message : 'Terjadi error.');
+        refresh();
+      })
+      .absenPulang(TOKEN);
+  }
+
+  (function init(){
+    try { TOKEN = localStorage.getItem('PT_TOKEN'); } catch(e) {}
+    if (!TOKEN) {
+      window.location.href = '<?= baseUrl ?>?page=login';
+      return;
+    }
+
+    // Validasi token dulu
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          try { localStorage.removeItem('PT_TOKEN'); localStorage.removeItem('PT_USER'); } catch(e){}
+          window.location.href = '<?= baseUrl ?>?page=login';
+          return;
+        }
+        const u = res.user || {};
+        document.getElementById('info').textContent =
+          (u.nama || '-') + ' • ' + (u.role || '-') + ' • ' + (u.lokasi_site_default || '-');
+
+        // load status absen hari ini
+        refresh();
+      })
+      .withFailureHandler(function(){
+        window.location.href = '<?= baseUrl ?>?page=login';
+      })
+      .verifyToken(TOKEN);
+  })();
+</script>
