@@ -1,0 +1,71 @@
+<div class="container" style="max-width:480px; padding:24px;">
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h4 class="mb-3">Login PATROLI SITE</h4>
+
+      <div class="mb-3">
+        <label class="form-label">Username</label>
+        <input id="username" class="form-control" autocomplete="username" />
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Password</label>
+        <input id="password" type="password" class="form-control" autocomplete="current-password" />
+      </div>
+
+      <div id="msg" class="alert alert-danger" style="display:none;"></div>
+
+      <button class="btn btn-primary w-100" onclick="doLogin()">Login</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function autoRedirectIfLoggedIn(){
+    try {
+      const token = localStorage.getItem('PT_TOKEN');
+      if (token) {
+        window.location.href = '<?= baseUrl ?>?page=dashboard';
+      }
+    } catch(e) {}
+  })();
+
+  function setMsg(text) {
+    const el = document.getElementById('msg');
+    el.style.display = text ? 'block' : 'none';
+    el.textContent = text || '';
+  }
+
+  function doLogin() {
+    setMsg('');
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+
+    if (!username || !password) {
+      setMsg('Username dan password wajib diisi.');
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.ok) {
+          setMsg(res && res.message ? res.message : 'Login gagal.');
+          return;
+        }
+        try {
+          localStorage.setItem('PT_TOKEN', res.token);
+          localStorage.setItem('PT_USER', JSON.stringify(res.user || {}));
+        } catch(e) {}
+        window.location.href = '<?= baseUrl ?>?page=dashboard';
+      })
+      .withFailureHandler(function(err) {
+        setMsg(err && err.message ? err.message : 'Terjadi error.');
+      })
+      .login(username, password);
+  }
+
+  // Enter untuk login
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Enter') doLogin();
+  });
+</script>
