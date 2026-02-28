@@ -1,0 +1,230 @@
+<div class="container py-3" style="max-width:800px;">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="mb-1">Profil Saya</h4>
+      <div class="text-muted" id="info" style="font-size:13px;"></div>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="<?= baseUrl ?>?page=dashboard">Kembali</a>
+  </div>
+
+  <div id="msg" class="alert" style="display:none;"></div>
+
+  <!-- Form Profil -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="row g-3">
+
+        <div class="col-md-6">
+          <label class="form-label">Nama</label>
+          <input id="nama" class="form-control" placeholder="Nama lengkap" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">No HP / WA</label>
+          <input id="no_hp" class="form-control" placeholder="08xxxxxxxxxx" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Kategori</label>
+          <input id="kategori" class="form-control" readonly />
+          <div class="text-muted" style="font-size:12px;">Diatur oleh admin.</div>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Lokasi Site</label>
+          <input id="lokasi_site" class="form-control" readonly />
+          <div class="text-muted" style="font-size:12px;">Diatur oleh admin.</div>
+        </div>
+
+        <div class="col-md-12">
+          <label class="form-label">URL Foto</label>
+          <input id="url_foto" class="form-control" placeholder="https://... (opsional)" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Level Akses</label>
+          <input id="level_akses" class="form-control" readonly />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Status</label>
+          <input id="status" class="form-control" readonly />
+        </div>
+
+      </div>
+
+      <div class="d-flex gap-2 mt-3">
+        <button id="btnSave" class="btn btn-primary" onclick="saveProfile()" disabled>Simpan Profil</button>
+        <button class="btn btn-outline-secondary" onclick="load()">Refresh</button>
+      </div>
+
+      <div id="saveNote" class="text-muted mt-2" style="font-size:12px;"></div>
+    </div>
+  </div>
+
+
+  <!-- Ganti Password -->
+  <div class="card">
+    <div class="card-body">
+      <h6 class="mb-3">Ganti Password</h6>
+
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Password Lama</label>
+          <input id="oldpass" type="password" class="form-control" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Password Baru</label>
+          <input id="newpass" type="password" class="form-control" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Ulangi Password Baru</label>
+          <input id="newpass2" type="password" class="form-control" />
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 mt-3">
+        <button id="btnPass" class="btn btn-warning" onclick="changePass()" disabled>Ubah Password</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let TOKEN = null;
+
+  function showMsg(type, text) {
+    const el = document.getElementById('msg');
+    el.className = 'alert alert-' + (type || 'info');
+    el.style.display = text ? 'block' : 'none';
+    el.textContent = text || '';
+  }
+
+  function val(id) { return (document.getElementById(id).value || '').trim(); }
+  function setVal(id, v) { document.getElementById(id).value = (v == null ? '' : v); }
+
+  function fillFromPersonil(personilObj) {
+    const p = personilObj || {};
+    setVal('nama', p.nama || '');
+    setVal('no_hp', p.no_hp || '');
+    setVal('kategori', p.kategori || '');
+    setVal('lokasi_site', p.lokasi_site || '');
+    setVal('url_foto', p.url_foto || '');
+    setVal('level_akses', p.level_akses || '');
+    setVal('status', p.status || '');
+  }
+
+
+
+  function load() {
+    showMsg('', '');
+    document.getElementById('saveNote').textContent = '';
+
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          showMsg('warning', (res && res.message) ? res.message : 'Gagal memuat profil.');
+          return;
+        }
+
+        const u = res.data.user || {};
+        const p = res.data.personil || null;
+
+        document.getElementById('info').textContent =
+          (u.nama || '-') + ' • ' + (u.role || '-') + ' • id_personil=' + (u.id_personil || '-');
+
+        fillFromPersonil(p || {});
+        document.getElementById('btnSave').disabled = false;
+        document.getElementById('btnPass').disabled = false;
+
+        if (!p) {
+          showMsg('info', 'Data Personil belum ada. Saat kamu klik "Simpan Profil", baris Personil akan dibuat otomatis.');
+        }
+      })
+      .withFailureHandler(function(err){
+        showMsg('warning', err && err.message ? err.message : 'Terjadi error.');
+      })
+      .getMyProfile(TOKEN);
+  }
+
+  function saveProfile() {
+    showMsg('info', 'Menyimpan...');
+    document.getElementById('btnSave').disabled = true;
+
+    // kita kirim patch "umum"
+    const patch = {
+      nama: val('nama'),
+      no_hp: val('no_hp'),
+      url_foto: val('url_foto')
+    };
+
+
+
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          showMsg('warning', (res && res.message) ? res.message : 'Gagal menyimpan.');
+          document.getElementById('btnSave').disabled = false;
+          return;
+        }
+        showMsg('success', res.message || 'Tersimpan.');
+        document.getElementById('btnSave').disabled = false;
+
+        const updated = (res.data && res.data.updated) ? res.data.updated : [];
+        const skipped = (res.data && res.data.skipped) ? res.data.skipped : [];
+        document.getElementById('saveNote').textContent =
+          `Updated: ${updated.join(', ') || '-'} | Skipped (kolom tidak ada): ${skipped.join(', ') || '-'}`;
+      })
+      .withFailureHandler(function(err){
+        showMsg('warning', err && err.message ? err.message : 'Terjadi error.');
+        document.getElementById('btnSave').disabled = false;
+      })
+      .updateMyProfile(TOKEN, patch);
+  }
+
+  function changePass() {
+    const oldp = document.getElementById('oldpass').value || '';
+    const np = document.getElementById('newpass').value || '';
+    const np2 = document.getElementById('newpass2').value || '';
+
+    if (!oldp || !np || !np2) return showMsg('warning', 'Isi semua field password.');
+    if (np.length < 6) return showMsg('warning', 'Password baru minimal 6 karakter.');
+    if (np !== np2) return showMsg('warning', 'Password baru tidak sama.');
+
+    showMsg('info', 'Mengubah password...');
+    document.getElementById('btnPass').disabled = true;
+
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          showMsg('warning', (res && res.message) ? res.message : 'Gagal ubah password.');
+          document.getElementById('btnPass').disabled = false;
+          return;
+        }
+        showMsg('success', res.message || 'Password berubah.');
+        document.getElementById('btnPass').disabled = false;
+        document.getElementById('oldpass').value = '';
+        document.getElementById('newpass').value = '';
+        document.getElementById('newpass2').value = '';
+      })
+      .withFailureHandler(function(err){
+        showMsg('warning', err && err.message ? err.message : 'Terjadi error.');
+        document.getElementById('btnPass').disabled = false;
+      })
+      .changeMyPassword(TOKEN, oldp, np);
+  }
+
+  (function init(){
+    try { TOKEN = localStorage.getItem('PT_TOKEN'); } catch(e) {}
+    if (!TOKEN) return window.location.href = '<?= baseUrl ?>?page=login';
+
+    google.script.run.withSuccessHandler(function(res){
+      if (!res || !res.ok) {
+        try { localStorage.removeItem('PT_TOKEN'); localStorage.removeItem('PT_USER'); } catch(e){}
+        window.location.href = '<?= baseUrl ?>?page=login';
+        return;
+      }
+      load();
+    }).verifyToken(TOKEN);
+  })();
+</script>
