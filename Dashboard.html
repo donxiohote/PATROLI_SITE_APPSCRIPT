@@ -1,0 +1,159 @@
+<div class="container" style="padding:24px;">
+  <!-- Header -->
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="mb-1">Dashboard</h4>
+      <div class="text-muted" id="userInfo" style="font-size:14px;"></div>
+    </div>
+    <a class="btn btn-outline-danger btn-sm" href="<?= baseUrl ?>?page=logout">
+      Logout
+    </a>
+  </div>
+
+  <!-- Warning -->
+  <div id="warn" class="alert alert-warning" style="display:none;"></div>
+
+  <!-- Menu Cards -->
+  <div class="row g-3">
+
+    <!-- ABSEN -->
+    <div class="col-md-4">
+      <a href="<?= baseUrl ?>?page=absen" class="card text-decoration-none h-100">
+        <div class="card-body">
+          <div class="fw-bold">Absen Masuk / Pulang</div>
+          <div class="text-muted" style="font-size:13px;">
+            Absen mandiri setelah login
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- SCAN -->
+    <div class="col-md-4">
+      <a href="<?= baseUrl ?>?page=scan" class="card text-decoration-none h-100">
+        <div class="card-body">
+          <div class="fw-bold">Scan Patroli</div>
+          <div class="text-muted" style="font-size:13px;">
+            Scan QR checkpoint patroli
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- RIWAYAT ABSEN -->
+    <div class="col-md-4">
+      <a href="<?= baseUrl ?>?page=riwayat_absen" class="card text-decoration-none h-100">
+        <div class="card-body">
+          <div class="fw-bold">Riwayat Absen</div>
+          <div class="text-muted" style="font-size:13px;">
+            Lihat histori absen saya
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- RIWAYAT SCAN -->
+    <div class="col-md-4">
+      <a href="<?= baseUrl ?>?page=riwayat_scan" class="card text-decoration-none h-100">
+        <div class="card-body">
+          <div class="fw-bold">Riwayat Scan</div>
+          <div class="text-muted" style="font-size:13px;">
+            Histori scan checkpoint saya
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <div class="col-md-4" id="cardCheckpointMaster" style="display:none;">
+      <a class="card text-decoration-none h-100" href="<?= baseUrl ?>?page=checkpoint_master">
+        <div class="card-body">
+          <div class="fw-bold">Master Checkpoint</div>
+          <div class="text-muted" style="font-size:13px;">Kelola checkpoint + Generate & Print QR</div>
+        </div>
+      </a>
+    </div>
+
+
+    <!-- MONITOR ADMIN (hidden default) -->
+    <div class="col-md-4" id="cardMonitorAdmin" style="display:none;">
+      <a class="card text-decoration-none h-100" href="<?= baseUrl ?>?page=monitor_admin">
+        <div class="card-body">
+          <div class="fw-bold">Monitoring Admin (LIVE)</div>
+          <div class="text-muted" style="font-size:13px;">
+            Belum absen • belum pulang • summary scan
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- PROFIL -->
+    <div class="col-md-4">
+      <a href="<?= baseUrl ?>?page=profil" class="card text-decoration-none h-100">
+        <div class="card-body">
+          <div class="fw-bold">Profil Saya</div>
+          <div class="text-muted" style="font-size:13px;">
+            Update profil & password
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- PANIC -->
+    <div class="col-md-4">
+      <a href="<?= baseUrl ?>?page=panic" class="card text-decoration-none h-100">
+        <div class="card-body">
+          <div class="fw-bold text-danger">🚨 Panic Button</div>
+          <div class="text-muted" style="font-size:13px;">
+            Kirim emergency alert
+          </div>
+        </div>
+      </a>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function guardDashboard(){
+  let token = null;
+  try { token = localStorage.getItem('PT_TOKEN'); } catch(e) {}
+
+  if (!token) {
+    window.location.href = '<?= baseUrl ?>?page=login';
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(res){
+      if (!res || !res.ok) {
+        try {
+          localStorage.removeItem('PT_TOKEN');
+          localStorage.removeItem('PT_USER');
+        } catch(e){}
+        window.location.href = '<?= baseUrl ?>?page=login';
+        return;
+      }
+
+      const u = res.user || {};
+      document.getElementById('userInfo').textContent =
+        (u.nama || '-') + ' • ' +
+        (u.role || '-') + ' • ' +
+        (u.lokasi_site_default || '-');
+
+      // tampilkan Monitoring Admin hanya untuk admin/komandan
+      const role = String(u.role || '').toLowerCase();
+      if (role === 'admin' || role === 'komandan') {
+        const c1 = document.getElementById('cardMonitorAdmin');
+        if (c1) c1.style.display = '';
+        const c2 = document.getElementById('cardCheckpointMaster');
+        if (c2) c2.style.display = '';
+      }
+    })
+    .withFailureHandler(function(){
+      const w = document.getElementById('warn');
+      w.style.display = 'block';
+      w.textContent = 'Gagal verifikasi session. Periksa koneksi internet.';
+    })
+    .verifyToken(token);
+})();
+</script>
